@@ -1,0 +1,273 @@
+name: Build ColorSplash
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 8
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 4.10.3
+      - name: Crear archivos del mod
+        run: |
+          mkdir -p "$(dirname 'src/main/java/com/colorsplash/ColorSplash.java')"
+          cat > 'src/main/java/com/colorsplash/ColorSplash.java' <<'EOF_0'
+          package com.colorsplash;
+
+          import java.util.Map;
+
+          import net.minecraft.client.Minecraft;
+          import net.minecraft.client.settings.KeyBinding;
+          import net.minecraft.client.renderer.OpenGlHelper;
+          import net.minecraft.client.renderer.entity.RenderLivingBase;
+          import net.minecraft.client.renderer.entity.RenderPlayer;
+          import net.minecraft.client.shader.ShaderGroup;
+          import net.minecraft.util.ResourceLocation;
+          import net.minecraftforge.common.MinecraftForge;
+          import net.minecraftforge.fml.client.registry.ClientRegistry;
+          import net.minecraftforge.fml.common.Mod;
+          import net.minecraftforge.fml.common.Mod.EventHandler;
+          import net.minecraftforge.fml.common.event.FMLInitializationEvent;
+          import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
+          import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+          import net.minecraftforge.fml.common.gameevent.TickEvent;
+          import net.minecraftforge.fml.relauncher.ReflectionHelper;
+          import org.lwjgl.input.Keyboard;
+
+          @Mod(modid = ColorSplash.MODID, name = "ColorSplash", version = "1.0",
+                  clientSideOnly = true, acceptedMinecraftVersions = "[1.12.2]")
+          public class ColorSplash {
+              public static final String MODID = "colorsplash";
+              private static final ResourceLocation SHADER = new ResourceLocation(MODID, "shaders/post/vibrant.json");
+              private static KeyBinding toggle;
+              private static boolean colorsOn = true;
+
+              @EventHandler
+              public void init(FMLInitializationEvent e) {
+                  toggle = new KeyBinding("Colores vivos (on/off)", Keyboard.KEY_V, "ColorSplash");
+                  ClientRegistry.registerKeyBinding(toggle);
+                  MinecraftForge.EVENT_BUS.register(this);
+              }
+
+              // Cambia el modelo de todos los jugadores (skin normal y slim) por el animado.
+              @EventHandler
+              public void post(FMLPostInitializationEvent e) {
+                  Map<String, RenderPlayer> skins = Minecraft.getMinecraft().getRenderManager().getSkinMap();
+                  for (Map.Entry<String, RenderPlayer> en : skins.entrySet()) {
+                      boolean slim = en.getKey().equals("slim");
+                      ReflectionHelper.setPrivateValue(RenderLivingBase.class, en.getValue(),
+                              new ModelPlayerAnim(0.0F, slim), "mainModel", "field_77045_g");
+                  }
+              }
+
+              @SubscribeEvent
+              public void tick(TickEvent.ClientTickEvent ev) {
+                  if (ev.phase != TickEvent.Phase.END) return;
+                  Minecraft mc = Minecraft.getMinecraft();
+                  if (mc.player == null || !OpenGlHelper.shadersSupported) return;
+                  while (toggle.isPressed()) colorsOn = !colorsOn;
+                  ShaderGroup cur = mc.entityRenderer.getShaderGroup();
+                  boolean mine = cur != null && cur.getShaderGroupName().equals(SHADER.toString());
+                  if (colorsOn && cur == null) mc.entityRenderer.loadShader(SHADER);
+                  else if (!colorsOn && mine) mc.entityRenderer.stopUseShader();
+              }
+          }
+          EOF_0
+          mkdir -p "$(dirname 'src/main/java/com/colorsplash/ModelPlayerAnim.java')"
+          cat > 'src/main/java/com/colorsplash/ModelPlayerAnim.java' <<'EOF_1'
+          package com.colorsplash;
+
+          import net.minecraft.client.model.ModelBase;
+          import net.minecraft.client.model.ModelPlayer;
+          import net.minecraft.client.model.ModelRenderer;
+          import net.minecraft.entity.Entity;
+          import net.minecraft.entity.EntityLivingBase;
+          import net.minecraft.item.Item;
+          import net.minecraft.item.ItemAxe;
+          import net.minecraft.item.ItemHoe;
+          import net.minecraft.item.ItemPickaxe;
+          import net.minecraft.item.ItemSword;
+          import net.minecraft.util.EnumHand;
+          import net.minecraft.util.EnumHandSide;
+          import net.minecraft.util.math.MathHelper;
+
+          /** Modelo de jugador con caminata mejorada y poses/golpes por herramienta. La pala no se toca. */
+          public class ModelPlayerAnim extends ModelPlayer {
+
+              public ModelPlayerAnim(float size, boolean slim) {
+                  super(size, slim);
+              }
+
+              @Override
+              public void setRotationAngles(float ls, float lsa, float age, float yaw, float pitch,
+                                            float scale, Entity entity) {
+                  super.setRotationAngles(ls, lsa, age, yaw, pitch, scale, entity);
+                  if (!(entity instanceof EntityLivingBase)) return;
+                  EntityLivingBase l = (EntityLivingBase) entity;
+
+                  // ---- Caminata: brazos y piernas más amplios, torso inclinado y balanceo ----
+                  if (lsa > 0.01F && !isRiding && !l.isElytraFlying()) {
+                      float t = ls * 0.6662F;
+                      bipedBody.rotateAngleX += lsa * 0.12F;
+                      bipedBody.rotateAngleZ += MathHelper.cos(t) * lsa * 0.05F;
+                      bipedHead.rotateAngleZ += MathHelper.cos(t) * lsa * 0.04F;
+                      bipedRightArm.rotateAngleX *= 1.25F;
+                      bipedLeftArm.rotateAngleX *= 1.25F;
+                      bipedRightLeg.rotateAngleX *= 1.15F;
+                      bipedLeftLeg.rotateAngleX *= 1.15F;
+                  }
+
+                  // ---- Herramientas (pico, hacha, espada, azada) ----
+                  Item it = l.getHeldItemMainhand().getItem();
+                  int type = it instanceof ItemPickaxe ? 1 : it instanceof ItemAxe ? 2
+                          : it instanceof ItemSword ? 3 : it instanceof ItemHoe ? 4 : 0;
+                  if (type != 0 && !isRiding) {
+                      boolean right = l.getPrimaryHand() == EnumHandSide.RIGHT;
+                      ModelRenderer arm = right ? bipedRightArm : bipedLeftArm;
+                      float side = right ? 1.0F : -1.0F;
+                      float p = swingProgress;
+                      boolean swinging = p > 0.0F && l.swingingHand == EnumHand.MAIN_HAND;
+
+                      if (!swinging) { // agarrar: brazo ligeramente levantado
+                          arm.rotateAngleX -= type == 3 ? 0.5F : 0.3F;
+                          arm.rotateAngleZ += side * 0.08F;
+                      } else if (type == 1 || type == 2) { // talar / picar: golpe por arriba
+                          arm.rotateAngleX = chop(p, 2.8F);
+                          arm.rotateAngleZ = side * (type == 2 ? 0.35F : 0.08F) * MathHelper.sin(p * (float) Math.PI);
+                          bipedBody.rotateAngleX += lean(p);
+                      } else if (type == 4) { // azada: jalón hacia abajo
+                          arm.rotateAngleX = chop(p, 2.1F);
+                          bipedBody.rotateAngleX += lean(p) * 1.3F;
+                      } else { // espada: corte horizontal
+                          arm.rotateAngleX = -1.5F + MathHelper.sin(p * (float) Math.PI) * 0.2F;
+                          arm.rotateAngleY = bipedBody.rotateAngleY - side * (0.9F - p * 1.8F);
+                          arm.rotateAngleZ = 0.0F;
+                      }
+                  }
+
+                  // Las capas exteriores (mangas, pantalón, chaqueta) siguen a las partes base.
+                  ModelBase.copyModelAngles(bipedHead, bipedHeadwear);
+                  ModelBase.copyModelAngles(bipedBody, bipedBodyWear);
+                  ModelBase.copyModelAngles(bipedLeftArm, bipedLeftArmwear);
+                  ModelBase.copyModelAngles(bipedRightArm, bipedRightArmwear);
+                  ModelBase.copyModelAngles(bipedLeftLeg, bipedLeftLegwear);
+                  ModelBase.copyModelAngles(bipedRightLeg, bipedRightLegwear);
+              }
+
+              /** Sube el brazo (0 a 0.4 del golpe) y lo deja caer rápido (resto). */
+              private static float chop(float p, float top) {
+                  return p < 0.4F ? -0.3F - (p / 0.4F) * (top - 0.3F)
+                                  : -top + ((p - 0.4F) / 0.6F) * (top - 0.2F);
+              }
+
+              /** Inclinación del torso al momento del impacto. */
+              private static float lean(float p) {
+                  return p > 0.3F ? MathHelper.sin((p - 0.3F) / 0.7F * (float) Math.PI) * 0.4F : 0.0F;
+              }
+          }
+          EOF_1
+          mkdir -p "$(dirname 'src/main/resources/pack.mcmeta')"
+          cat > 'src/main/resources/pack.mcmeta' <<'EOF_2'
+          {"pack":{"pack_format":3,"description":"ColorSplash resources"}}
+          EOF_2
+          mkdir -p "$(dirname 'src/main/resources/mcmod.info')"
+          cat > 'src/main/resources/mcmod.info' <<'EOF_3'
+          [{"modid":"colorsplash","name":"ColorSplash","description":"Animaciones de caminata y herramientas, y colores vivos tipo shader.","version":"${version}","mcversion":"${mcversion}","authorList":[""]}]
+          EOF_3
+          mkdir -p "$(dirname 'src/main/resources/assets/colorsplash/shaders/post/vibrant.json')"
+          cat > 'src/main/resources/assets/colorsplash/shaders/post/vibrant.json' <<'EOF_4'
+          {
+            "targets": ["swap"],
+            "passes": [
+              {"name": "vibrant", "intarget": "minecraft:main", "outtarget": "swap",
+               "uniforms": [{"name": "Saturation", "values": [1.4]}, {"name": "Contrast", "values": [1.08]}]},
+              {"name": "blit", "intarget": "swap", "outtarget": "minecraft:main"}
+            ]
+          }
+          EOF_4
+          mkdir -p "$(dirname 'src/main/resources/assets/minecraft/shaders/program/vibrant.vsh')"
+          cat > 'src/main/resources/assets/minecraft/shaders/program/vibrant.vsh' <<'EOF_5'
+          #version 120
+          attribute vec4 Position;
+          uniform mat4 ProjMat;
+          varying vec2 texCoord;
+          void main() {
+              vec4 outPos = ProjMat * vec4(Position.xy, 0.0, 1.0);
+              gl_Position = vec4(outPos.xy, 0.2, 1.0);
+              texCoord = outPos.xy * 0.5 + 0.5;
+          }
+          EOF_5
+          mkdir -p "$(dirname 'src/main/resources/assets/minecraft/shaders/program/vibrant.json')"
+          cat > 'src/main/resources/assets/minecraft/shaders/program/vibrant.json' <<'EOF_6'
+          {
+            "blend": {"func": "add", "srcrgb": "one", "dstrgb": "zero"},
+            "vertex": "vibrant",
+            "fragment": "vibrant",
+            "attributes": ["Position"],
+            "samplers": [{"name": "DiffuseSampler"}],
+            "uniforms": [
+              {"name": "ProjMat", "type": "matrix4x4", "count": 16, "values": [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]},
+              {"name": "Saturation", "type": "float", "count": 1, "values": [1.0]},
+              {"name": "Contrast", "type": "float", "count": 1, "values": [1.0]}
+            ]
+          }
+          EOF_6
+          mkdir -p "$(dirname 'src/main/resources/assets/minecraft/shaders/program/vibrant.fsh')"
+          cat > 'src/main/resources/assets/minecraft/shaders/program/vibrant.fsh' <<'EOF_7'
+          #version 120
+          uniform sampler2D DiffuseSampler;
+          uniform float Saturation;
+          uniform float Contrast;
+          varying vec2 texCoord;
+          void main() {
+              vec3 c = texture2D(DiffuseSampler, texCoord).rgb;
+              float l = dot(c, vec3(0.299, 0.587, 0.114));
+              vec3 col = mix(vec3(l), c, Saturation);
+              col = (col - 0.5) * Contrast + 0.5;
+              col += vec3(0.04, 0.01, -0.03) * l;          // luces más cálidas
+              col += vec3(-0.02, 0.0, 0.04) * (1.0 - l);   // sombras más frías
+              gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+          }
+          EOF_7
+          mkdir -p "$(dirname 'build.gradle')"
+          cat > 'build.gradle' <<'EOF_8'
+          buildscript {
+              repositories {
+                  mavenCentral()
+                  jcenter()
+                  maven { url = "https://maven.minecraftforge.net" }
+              }
+              dependencies { classpath 'net.minecraftforge.gradle:ForgeGradle:2.3-SNAPSHOT' }
+          }
+          apply plugin: 'net.minecraftforge.gradle.forge'
+          version = "1.0"
+          group = "com.colorsplash"
+          archivesBaseName = "ColorSplash"
+          sourceCompatibility = targetCompatibility = '1.8'
+          compileJava { sourceCompatibility = targetCompatibility = '1.8' }
+          minecraft {
+              version = "1.12.2-14.23.5.2860"
+              runDir = "run"
+              mappings = "stable_39"
+          }
+          processResources {
+              inputs.property "version", project.version
+              inputs.property "mcversion", project.minecraft.version
+              from(sourceSets.main.resources.srcDirs) {
+                  include 'mcmod.info'
+                  expand 'version': project.version, 'mcversion': project.minecraft.version
+              }
+              from(sourceSets.main.resources.srcDirs) { exclude 'mcmod.info' }
+          }
+          EOF_8
+      - name: Compilar
+        run: gradle build --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ColorSplash-jar
+          path: build/libs/*.jar
