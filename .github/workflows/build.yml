@@ -9,12 +9,16 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 8
-      - uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: 4.10.3
-      - name: Crear archivos del mod
+          java-version: |
+            8
+            21
+      - name: Bajar plantilla 1.12.2 (RetroFuturaGradle)
+        run: git clone --depth 1 https://github.com/CleanroomMC/ForgeDevEnv.git proj
+      - name: Poner el mod
         run: |
+          cd proj
+          rm -rf src/main/java
+          mkdir -p src/main/java src/main/resources
           mkdir -p "$(dirname 'src/main/java/com/colorsplash/ColorSplash.java')"
           cat > 'src/main/java/com/colorsplash/ColorSplash.java' <<'EOF_0'
           package com.colorsplash;
@@ -175,12 +179,8 @@ jobs:
           cat > 'src/main/resources/pack.mcmeta' <<'EOF_2'
           {"pack":{"pack_format":3,"description":"ColorSplash resources"}}
           EOF_2
-          mkdir -p "$(dirname 'src/main/resources/mcmod.info')"
-          cat > 'src/main/resources/mcmod.info' <<'EOF_3'
-          [{"modid":"colorsplash","name":"ColorSplash","description":"Animaciones de caminata y herramientas, y colores vivos tipo shader.","version":"${version}","mcversion":"${mcversion}","authorList":[""]}]
-          EOF_3
           mkdir -p "$(dirname 'src/main/resources/assets/colorsplash/shaders/post/vibrant.json')"
-          cat > 'src/main/resources/assets/colorsplash/shaders/post/vibrant.json' <<'EOF_4'
+          cat > 'src/main/resources/assets/colorsplash/shaders/post/vibrant.json' <<'EOF_3'
           {
             "targets": ["swap"],
             "passes": [
@@ -189,9 +189,9 @@ jobs:
               {"name": "blit", "intarget": "swap", "outtarget": "minecraft:main"}
             ]
           }
-          EOF_4
+          EOF_3
           mkdir -p "$(dirname 'src/main/resources/assets/minecraft/shaders/program/vibrant.vsh')"
-          cat > 'src/main/resources/assets/minecraft/shaders/program/vibrant.vsh' <<'EOF_5'
+          cat > 'src/main/resources/assets/minecraft/shaders/program/vibrant.vsh' <<'EOF_4'
           #version 120
           attribute vec4 Position;
           uniform mat4 ProjMat;
@@ -201,9 +201,9 @@ jobs:
               gl_Position = vec4(outPos.xy, 0.2, 1.0);
               texCoord = outPos.xy * 0.5 + 0.5;
           }
-          EOF_5
+          EOF_4
           mkdir -p "$(dirname 'src/main/resources/assets/minecraft/shaders/program/vibrant.json')"
-          cat > 'src/main/resources/assets/minecraft/shaders/program/vibrant.json' <<'EOF_6'
+          cat > 'src/main/resources/assets/minecraft/shaders/program/vibrant.json' <<'EOF_5'
           {
             "blend": {"func": "add", "srcrgb": "one", "dstrgb": "zero"},
             "vertex": "vibrant",
@@ -216,9 +216,9 @@ jobs:
               {"name": "Contrast", "type": "float", "count": 1, "values": [1.0]}
             ]
           }
-          EOF_6
+          EOF_5
           mkdir -p "$(dirname 'src/main/resources/assets/minecraft/shaders/program/vibrant.fsh')"
-          cat > 'src/main/resources/assets/minecraft/shaders/program/vibrant.fsh' <<'EOF_7'
+          cat > 'src/main/resources/assets/minecraft/shaders/program/vibrant.fsh' <<'EOF_6'
           #version 120
           uniform sampler2D DiffuseSampler;
           uniform float Saturation;
@@ -233,41 +233,18 @@ jobs:
               col += vec3(-0.02, 0.0, 0.04) * (1.0 - l);   // sombras más frías
               gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
           }
-          EOF_7
-          mkdir -p "$(dirname 'build.gradle')"
-          cat > 'build.gradle' <<'EOF_8'
-          buildscript {
-              repositories {
-                  mavenCentral()
-                  jcenter()
-                  maven { url = "https://maven.minecraftforge.net" }
-              }
-              dependencies { classpath 'net.minecraftforge.gradle:ForgeGradle:2.3-SNAPSHOT' }
-          }
-          apply plugin: 'net.minecraftforge.gradle.forge'
-          version = "1.0"
-          group = "com.colorsplash"
-          archivesBaseName = "ColorSplash"
-          sourceCompatibility = targetCompatibility = '1.8'
-          compileJava { sourceCompatibility = targetCompatibility = '1.8' }
-          minecraft {
-              version = "1.12.2-14.23.5.2860"
-              runDir = "run"
-              mappings = "stable_39"
-          }
-          processResources {
-              inputs.property "version", project.version
-              inputs.property "mcversion", project.minecraft.version
-              from(sourceSets.main.resources.srcDirs) {
-                  include 'mcmod.info'
-                  expand 'version': project.version, 'mcversion': project.minecraft.version
-              }
-              from(sourceSets.main.resources.srcDirs) { exclude 'mcmod.info' }
-          }
-          EOF_8
+          EOF_6
+          sed -i -E 's/^root_package *=.*/root_package = com/' gradle.properties
+          sed -i -E 's/^mod_id *=.*/mod_id = colorsplash/' gradle.properties
+          sed -i -E 's/^mod_name *=.*/mod_name = ColorSplash/' gradle.properties
+          sed -i -E 's/^enable_junit_testing *=.*/enable_junit_testing = false/' gradle.properties
+          sed -i -E 's/^generate_sources_jar *=.*/generate_sources_jar = false/' gradle.properties
+          grep -E '^(root_package|mod_id|mod_name) ' gradle.properties
       - name: Compilar
-        run: gradle build --no-daemon
+        working-directory: proj
+        run: ./gradlew build --no-daemon -Porg.gradle.java.installations.fromEnv=JAVA_HOME_8_X64,JAVA_HOME_21_X64
       - uses: actions/upload-artifact@v4
         with:
           name: ColorSplash-jar
-          path: build/libs/*.jar
+          path: proj/build/libs/*.jar
+          
