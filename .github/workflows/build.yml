@@ -13,7 +13,7 @@ jobs:
             8
             21
       - name: Bajar plantilla 1.12.2 (RetroFuturaGradle)
-        run: git clone --depth 1 https://github.com/CleanroomMC/ForgeDevEnv.git proj
+        run: git clone --depth 1 https://github.com/Levviata/TemplateDevEnv.git proj
       - name: Poner el mod
         run: |
           cd proj
